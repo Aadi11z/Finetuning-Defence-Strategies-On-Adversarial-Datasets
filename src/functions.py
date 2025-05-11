@@ -21,7 +21,7 @@ class GaussianNoise(nn.Module):
             return x + noise
         return x
 
-class tSigmoid(nn.module):
+class tSigmoid(nn.Module):
     def __init__(self, t=0.15):
         super().__init__()
         self.t = t
