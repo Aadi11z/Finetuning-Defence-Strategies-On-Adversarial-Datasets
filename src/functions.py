@@ -28,4 +28,3 @@ class tSigmoid(nn.Module):
         
     def forward(self, x):
         return torch.clamp(x, min=self.t, max=(1-self.t))
-    
