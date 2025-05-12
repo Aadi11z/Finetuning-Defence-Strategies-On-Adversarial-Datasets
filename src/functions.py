@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class BReLU(nn.Module):
+class tSigmoid(nn.Module):
     def __init__(self, t=6.0):  # t is the upper bound, can be tuned
         super().__init__()
         self.t = t

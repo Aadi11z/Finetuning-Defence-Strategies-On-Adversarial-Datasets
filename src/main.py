@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import pandas as pd 
-from functions import GaussianNoise, BReLU
+from functions import GaussianNoise, tSigmoid
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 import torch.nn.functional as F
@@ -16,14 +16,14 @@ class RobustTextClassifier(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embed_dim)
         self.noise = GaussianNoise(noise_std)
         self.fc1 = nn.Linear(embed_dim, 128)
-        self.brelu = BReLU(t)
+        self.activation = tSigmoid(t)
         self.fc2 = nn.Linear(128, num_classes)
 
     def forward(self, x):
         emb = self.embedding(x).mean(dim=1)  # simple mean pooling
         emb = self.noise(emb)  # add Gaussian noise during training
         x = self.fc1(emb)
-        x = self.brelu(x)
+        x = self.activation(x)
         x = self.fc2(x)
         return x
 
@@ -41,11 +41,11 @@ class TextDataset(Dataset):
         return torch.tensor(tokens, dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.long)
     
 def tokenize(text):
-        return re.findall(r"\b\w+\b", text.lower())
+    return re.findall(r"\b\w+\b", text.lower())
 
 def main():
     # 1. Load and preprocess data
-    df['tokens'] = df['hypothesis'].apply(tokenize)  # assuming you use 'hypothesis' column
+    df['tokens'] = df['hypothesis'].apply(tokenize)
     label_encoder = LabelEncoder()
     df['label_enc'] = label_encoder.fit_transform(df['label'])
 
