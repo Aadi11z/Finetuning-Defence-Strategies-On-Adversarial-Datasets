@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class tSigmoid(nn.Module):
+class BReLU(nn.Module):
     def __init__(self, t=6.0):  # t is the upper bound, can be tuned
         super().__init__()
         self.t = t
@@ -20,6 +20,8 @@ class GaussianNoise(nn.Module):
             noise = torch.randn_like(x) * self.std
             return x + noise
         return x
+
+# FGSM
 
 class tSigmoid(nn.Module):
     def __init__(self, t=0.15):
