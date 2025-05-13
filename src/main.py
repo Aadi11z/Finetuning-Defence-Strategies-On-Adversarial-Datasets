@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from sklearn.preprocessing import LabelEncoder
 from nltk.tokenize import word_tokenize
 from collections import Counter
+from transformers import AutoTokenizer, DistilBertForSequenceClassification
 import re
 
 class RobustTextClassifier(nn.Module):
@@ -20,53 +21,53 @@ class RobustTextClassifier(nn.Module):
         self.fc2 = nn.Linear(128, num_classes)
 
     def forward(self, x):
-        emb = self.embedding(x).mean(dim=1)  # simple mean pooling
-        emb = self.noise(emb)  # add Gaussian noise during training
+        emb = self.embedding(x).mean(dim=1)
+        emb = self.noise(emb)
         x = self.fc1(emb)
         x = self.activation(x)
         x = self.fc2(x)
         return x
 
 class TextDataset(Dataset):
-    def __init__(self, texts, labels, vocab):
-        self.texts = texts
+    def __init__(self, texts, labels, tokenizer, max_length=512):
+        self.encodings = tokenizer(texts, truncation=True, padding=True, max_length=max_length)
         self.labels = labels
-        self.vocab = vocab
 
     def __len__(self):
-        return len(self.texts)
+        return len(self.labels)
     
     def __getitem__(self, idx):
-        tokens = [self.vocab.get(tok, self.vocab["<UNK>"]) for tok in self.texts[idx]]
-        return torch.tensor(tokens, dtype=torch.long), torch.tensor(self.labels[idx], dtype=torch.long)
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
     
 def tokenize(text):
     return word_tokenize(text)
 
 def main(train_df, test_df):
-    print(torch.device.type)
-    
-    train_df['tokens'] = train_df['hypothesis'].apply(tokenize)
-    test_df['tokens'] = test_df['hypothesis'].apply(tokenize)
+    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     label_encoder = LabelEncoder()
     train_df['label_enc'] = label_encoder.fit_transform(train_df['label'])
     test_df['label_enc'] = label_encoder.transform(test_df['label'])
 
-    counter = Counter(tok for tokens in train_df['tokens'] for tok in tokens)
-    vocab = {word: i + 2 for i, (word, _) in enumerate(counter.items())}
-    vocab["<PAD>"] = 0
-    vocab["<UNK>"] = 1
+    train_texts = train_df['hypothesis'].tolist()
+    train_labels = train_df['label_enc'].tolist()
+    test_texts = test_df['hypothesis'].tolist()
+    test_labels = test_df['label_enc'].tolist()
 
-    train_dataset = TextDataset(train_df['tokens'].tolist(), train_df['label_enc'].tolist(), vocab)
-    val_dataset = TextDataset(test_df['tokens'].tolist(), test_df['label_enc'].tolist(), vocab)
+    train_dataset = TextDataset(train_texts, train_labels, tokenizer)
+    val_dataset = TextDataset(test_texts, test_labels, tokenizer)
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=64, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=64)
 
     num_classes = len(label_encoder.classes_)
-    model = RobustTextClassifier(len(vocab), 100, num_classes).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    model = DistilBertForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=num_classes)
+    model.to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
     criterion = nn.CrossEntropyLoss()
 
     epochs = 50
@@ -75,10 +76,11 @@ def main(train_df, test_df):
         model.train()
         total_loss = 0
         for batch in train_loader:
-            inputs, targets = [x.to(device) for x in batch]
+            inputs = {key: val.to(device) for key, val in batch.items() if key != 'labels'}
+            labels = batch['labels'].to(device)
             optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            outputs = model(**inputs)
+            loss = criterion(outputs.logits, labels)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
@@ -89,11 +91,12 @@ def main(train_df, test_df):
         correct, total = 0, 0
         with torch.no_grad():
             for batch in val_loader:
-                inputs, targets = [x.to(device) for x in batch]
-                outputs = model(inputs)
-                preds = torch.argmax(outputs, dim=1)
-                correct += (preds == targets).sum().item()
-                total += targets.size(0)
+                inputs = {key: val.to(device) for key, val in batch.items() if key != 'labels'}
+                labels = batch['labels'].to(device)
+                outputs = model(**inputs)
+                preds = torch.argmax(outputs.logits, dim=1)
+                correct += (preds == labels).sum().item()
+                total += labels.size(0)
         print(f"Validation Accuracy: {correct / total:.4f}")
 
 
@@ -119,5 +122,4 @@ if __name__ == "__main__":
     }
     train_df = pd.read_parquet(splits["train_r1"])
     test_df = pd.read_parquet(splits['test_r1'])
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") 
     main(train_df, test_df)
