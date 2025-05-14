@@ -1,32 +1,7 @@
-import torch
-import torch.nn as nn
-import pandas as pd 
-from functions import GaussianNoise, tSigmoid, BReLU
-from torch.utils.data import DataLoader, Dataset
-import torch.optim as optim
-import torch.nn.functional as F
-from sklearn.preprocessing import LabelEncoder
-from nltk.tokenize import word_tokenize
-from collections import Counter
-from transformers import AutoTokenizer, DistilBertForSequenceClassification
-import re
-
-class RobustTextClassifier(nn.Module):
-    def __init__(self, vocab_size, embed_dim, num_classes, t=0.15, noise_std=0.1):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, embed_dim)
-        self.noise = GaussianNoise(noise_std)
-        self.fc1 = nn.Linear(embed_dim, 128)
-        self.activation = BReLU(t)
-        self.fc2 = nn.Linear(128, num_classes)
-
-    def forward(self, x):
-        emb = self.embedding(x).mean(dim=1)
-        emb = self.noise(emb)
-        x = self.fc1(emb)
-        x = self.activation(x)
-        x = self.fc2(x)
-        return x
+from infobert import *
+from freelb import *
+from ranmask import *
+import sys
 
 class TextDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length=512):
@@ -45,7 +20,8 @@ def tokenize(text):
     return word_tokenize(text)
 
 def main(train_df, test_df):
-    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    # tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    tokenizer = AutoTokenizer.from_pretrained("kweinmeister/distilbert-anli")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     label_encoder = LabelEncoder()
@@ -64,7 +40,18 @@ def main(train_df, test_df):
     val_loader = DataLoader(val_dataset, batch_size=64)
 
     num_classes = len(label_encoder.classes_)
-    model = DistilBertForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=num_classes)
+
+    if sys.argv[1] == "1": 
+        print("Running INFOBert")
+        model = InfoBERTModel(num_labels=num_classes, t=6)
+    elif sys.argv[1] == "2":
+        print("Running FreeLB")
+        model = FreeLBModel(num_classes, t=6)
+    elif sys.argv[1] == "3":
+        print("Running RanMASK")
+        model = RanMASKModel(num_classes, t=6)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained("kweinmeister/distilbert-anli")
     model.to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
