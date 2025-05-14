@@ -1,6 +1,9 @@
 # Environment(aadi)
 nlpdefense-env/
 
+# Dataset
+anli/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

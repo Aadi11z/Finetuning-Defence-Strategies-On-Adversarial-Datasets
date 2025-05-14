@@ -30,3 +30,11 @@ class tSigmoid(nn.Module):
         
     def forward(self, x):
         return torch.clamp(x, min=self.t, max=(1-self.t))
+    
+class BGeLU(nn.Module):
+    def __init__(self, t=6.0):  # t is the upper bound, can be tuned
+        super().__init__()
+        self.t = t
+
+    def forward(self, x):
+        return torch.clamp(x, min=0.0, max=self.t)
